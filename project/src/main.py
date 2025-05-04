@@ -1,3 +1,4 @@
+from flask import Flask, request
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
@@ -5,17 +6,16 @@ import pandas as pd
 from tabulate import tabulate
 
 import pathlib
-
-import importlib
 import lib
-importlib.reload(lib)
 
 # ================ #
 
 BASE_PATH = pathlib.Path.cwd().resolve()
-SERVICE_ACCOUNT_FILE = BASE_PATH / "project" / "keys" / "service-account-key.json"
+SERVICE_ACCOUNT_PATH = BASE_PATH / "project" / "keys" / "service-account-key.json"
+SECRET_TOKEN_PATH = BASE_PATH / "project" / "keys" / "secret-token.txt"
 
-credentials = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE)
+
+credentials = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_PATH)
 service = build("sheets", "v4", credentials=credentials)
 
 # ================ #
@@ -24,6 +24,16 @@ SHEET_ID = "1vID-hTj_GR0XUpynUm1BnLNL28BTV2JHxe_a2LIssAw"
 WA_PAGE = "WA"
 AA_PAGE = "AA"
 TEMPLATE_PAGE = "TEMPLATE"
+
+# ================ #
+
+
+
+# ================ #
+
+# ! REFORMAT (this will be ran in the app)
+# ? Consider putting in different .py
+# * Write output to a file
 
 sheet_data = service.spreadsheets().values().get(
     spreadsheetId = SHEET_ID,
@@ -36,8 +46,6 @@ WA_data = pd.DataFrame(raw_values[1:], columns=raw_values[0])
 
 print(tabulate(WA_data, headers='keys', tablefmt='fancy_grid', showindex=False))
 
-# ================ #
-
 sheet_data = service.spreadsheets().values().get(
     spreadsheetId = SHEET_ID,
     range = AA_PAGE
@@ -48,8 +56,6 @@ raw_values = sheet_data.get("values", [])
 AA_data = pd.DataFrame(raw_values[1:], columns=raw_values[0])
 
 print(tabulate(AA_data, headers='keys', tablefmt='fancy_grid', showindex=False))
-
-# ================ #
 
 test_val = [["Open"]]
 
@@ -65,3 +71,27 @@ result = service.spreadsheets().values().update(
 ).execute()
 
 print(f"{result.get('updatedCells')} cells updated.")
+
+# ================ #
+
+app = Flask(__name__)
+
+@app.route("/webhook", methods=["POST"])
+def webhook():
+
+    auth_header = request.headers.get("Authorization")
+
+    if auth_header != open(SECRET_TOKEN_PATH).read().strip():
+        print("❌ Unauthorized webhook call")
+        return "Forbidden, 403"
+
+    payload = request.data.decode("utf-8")
+    print(f"\n🔔 Webhook received: {payload}")
+
+    if payload.strip().lower() == "ping":
+        print("Hello World!")
+
+    return "OK", 200
+
+if __name__ == "__main__":
+    app.run(port=5000)
