@@ -1,0 +1,11 @@
+pip install --upgrade google-api-python-client google-auth-httplib2 google-auth-oauthlib
+
+jupyter
+tabulate
+pandas
+
+flask
+
+Don't forget:
+
+python -m venv env
