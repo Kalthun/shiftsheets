@@ -1,3 +1,4 @@
+# imports
 from flask import Flask, request
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -14,6 +15,7 @@ BASE_PATH = pathlib.Path.cwd().resolve()
 SERVICE_ACCOUNT_PATH = BASE_PATH / "project" / "keys" / "service-account-key.json"
 SECRET_TOKEN_PATH = BASE_PATH / "project" / "keys" / "secret-token.txt"
 
+# ================ #
 
 credentials = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_PATH)
 service = build("sheets", "v4", credentials=credentials)
@@ -27,14 +29,6 @@ TEMPLATE_PAGE = "TEMPLATE"
 
 # ================ #
 
-
-
-# ================ #
-
-# ! REFORMAT (this will be ran in the app)
-# ? Consider putting in different .py
-# * Write output to a file
-
 sheet_data = service.spreadsheets().values().get(
     spreadsheetId = SHEET_ID,
     range = WA_PAGE
@@ -45,6 +39,8 @@ raw_values = sheet_data.get("values", [])
 WA_data = pd.DataFrame(raw_values[1:], columns=raw_values[0])
 
 print(tabulate(WA_data, headers='keys', tablefmt='fancy_grid', showindex=False))
+
+# ================ #
 
 sheet_data = service.spreadsheets().values().get(
     spreadsheetId = SHEET_ID,
@@ -57,20 +53,9 @@ AA_data = pd.DataFrame(raw_values[1:], columns=raw_values[0])
 
 print(tabulate(AA_data, headers='keys', tablefmt='fancy_grid', showindex=False))
 
-test_val = [["Open"]]
+# ================ #
 
-write_cell = f"{TEMPLATE_PAGE}!D6"
-
-body = {"values": test_val}
-
-result = service.spreadsheets().values().update(
-    spreadsheetId=SHEET_ID,
-    range=write_cell,
-    valueInputOption="RAW",
-    body=body
-).execute()
-
-print(f"{result.get('updatedCells')} cells updated.")
+# ! Write Code Here
 
 # ================ #
 
@@ -79,17 +64,17 @@ app = Flask(__name__)
 @app.route("/webhook", methods=["POST"])
 def webhook():
 
-    auth_header = request.headers.get("Authorization")
+    key = request.headers.get("Authorization")
 
-    if auth_header != open(SECRET_TOKEN_PATH).read().strip():
-        print("❌ Unauthorized webhook call")
+    if key != open(SECRET_TOKEN_PATH).read().strip():
         return "Forbidden, 403"
 
     payload = request.data.decode("utf-8")
-    print(f"\n🔔 Webhook received: {payload}")
-
     if payload.strip().lower() == "ping":
-        print("Hello World!")
+
+       print("Updating Sheets")
+
+       # * Put New Code Here
 
     return "OK", 200
 
