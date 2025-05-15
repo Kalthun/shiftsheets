@@ -40,6 +40,8 @@ class Month(Enum):
     NOV = (11, "November")
     DEC = (12, "December")
 
+# TODO: Make a date string -> date
+
 class Date:
     def __init__(self,
         day:int,
