@@ -1,4 +1,3 @@
-# imports
 from flask import Flask, request
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -25,7 +24,30 @@ service = build("sheets", "v4", credentials=credentials)
 SHEET_ID = "1vID-hTj_GR0XUpynUm1BnLNL28BTV2JHxe_a2LIssAw"
 
 WA_PAGE = "WA"
+
+WA_KEY_MAP = {
+    "time": "Timestamp",
+    "email": "Email Address",
+    "name": "What is your first & last name?",
+    "phone": "What is your phone number?",
+    "monday": "What is your weekly availability? [Monday]",
+    "tuesday": "What is your weekly availability? [Tuesday]",
+    "wednesday": "What is your weekly availability? [Wednesday]",
+    "thursday": "What is your weekly availability? [Thursday]",
+    "friday": "What is your weekly availability? [Friday]",
+    "saturday": "What is your weekly availability? [Saturday]",
+    "sunday": "What is your weekly availability? [Sunday]",
+    "custom": "Custom Availability",
+    "preferences": "How many shifts would you prefer each week? "
+}
+
 AA_PAGE = "AA"
+
+AA_KEY_MAP = {
+
+}
+
+# TODO: used as keys for the spreadsheet
 
 WEEKS = {
     "May 26 - June 8" : lib.DateRange(lib.Date(26, lib.Month.MAY, 2025), lib.Date(8, lib.Month.JUN, 2025)),
@@ -41,42 +63,110 @@ WEEKS = {
     "Oct 13 - Oct 26" : lib.DateRange(lib.Date(13, lib.Month.OCT, 2025), lib.Date(26, lib.Month.OCT, 2025))
 }
 
-for week in WEEKS:
-    print(week)
+TEST_PAGE = "T-25-V1"
 
-# TODO: Consider Helpers for getting WA and AA
-
-# ================ #
-
-sheet_data = service.spreadsheets().values().get(
-    spreadsheetId = SHEET_ID,
-    range = WA_PAGE
-).execute()
-
-raw_values = sheet_data.get("values", [])
-
-WA_data = pd.DataFrame(raw_values[1:], columns=raw_values[0])
-
-print(tabulate(WA_data, headers='keys', tablefmt='fancy_grid', showindex=False))
+# ? NOTES:
+# B1 : Month Day - Month Day
+# D1 - J1 : week 1
+# L1 - R1 : week 2
+# Col A for email linking
+# Row index by email
 
 # ================ #
 
-sheet_data = service.spreadsheets().values().get(
-    spreadsheetId = SHEET_ID,
-    range = AA_PAGE
-).execute()
+def get_page(name:str) -> pd.DataFrame:
 
-raw_values = sheet_data.get("values", [])
+    temp = service.spreadsheets().values().get(
+        spreadsheetId = SHEET_ID,
+        range = name
+    ).execute().get("values", [])
 
-AA_data = pd.DataFrame(raw_values[1:], columns=raw_values[0])
+    return pd.DataFrame(temp[1:], columns=temp[0])
 
-print(tabulate(AA_data, headers='keys', tablefmt='fancy_grid', showindex=False))
+def display_page(page):
+
+    print(tabulate(get_page(page), headers="keys", tablefmt="fancy_grid", showindex=False))
+
+# ================ #
+
+class Worker:
+
+    def __init__(self,
+        email:str,
+        name:str,
+        phone:str,
+        weekly_availability:list[lib.TimeRange],
+        # weekly_shifts_prefs:tuple[int,int]
+    ):
+        self.email = email
+        self.name = name
+        self.phone = phone
+        self.weekly_availability = weekly_availability
+        # self.weekly_shifts_prefs = weekly_shifts_prefs
+
+    def __str__(self):
+        availability_str = "\n".join(str(x) for x in self.weekly_availability)
+        return f"{self.email}: {self.name} | {self.phone}\n{availability_str}"
+
+def get_workers(data:pd.DataFrame) -> list[Worker]:
+
+    workers:list[Worker] = []
+
+    weekdays = [
+            "monday",
+            "tuesday",
+            "wednesday",
+            "thursday",
+            "friday",
+            "saturday",
+            "sunday"
+        ]
+
+    for _,worker in data.iterrows():
+
+        weekly_availability:list[lib.TimeRange] = []
+
+        # TODO: Make this a function
+
+        for weekday in weekdays:
+            match worker[WA_KEY_MAP[weekday]]:
+                case "NA":
+                    weekly_availability.append(lib.TimeRange(lib.Time(4,4,lib.Meridiem.AM),lib.Time(4,4,lib.Meridiem.AM)))
+                case "Open":
+                    weekly_availability.append(lib.TimeRange(lib.Time(2,22,lib.Meridiem.AM),lib.Time(4,0,lib.Meridiem.PM)))
+                case "Close":
+                    weekly_availability.append(lib.TimeRange(lib.Time(2,0,lib.Meridiem.PM),lib.Time(11,11,lib.Meridiem.PM)))
+                case "All Day":
+                    weekly_availability.append(lib.TimeRange(lib.Time(2,22,lib.Meridiem.AM),lib.Time(11,11,lib.Meridiem.PM)))
+                case _:
+                    weekly_availability.append(lib.TimeRange(lib.Time(4,4,lib.Meridiem.AM),lib.Time(4,4,lib.Meridiem.AM)))
+
+        # TODO: seperate Custom by , then filter (re-use logic) (also make a function)
+
+        workers.append(Worker(
+            email=worker[WA_KEY_MAP["email"]],
+            name=worker[WA_KEY_MAP["name"]],
+            phone=worker[WA_KEY_MAP["phone"]],
+            weekly_availability=weekly_availability
+        ))
+
+    for worker in workers:
+        print(worker)
+        print()
 
 # ================ #
 
-# ! Write Code Here
+def update():
+
+    WA_data = get_page(WA_PAGE)
+
+    AA_data = get_page(AA_PAGE)
+
+    get_workers(WA_data)
 
 # ================ #
+
+update()
 
 app = Flask(__name__)
 
@@ -91,9 +181,7 @@ def webhook():
     payload = request.data.decode("utf-8")
     if payload.strip().lower() == "ping":
 
-       print("Updating Sheets")
-
-       # * Put New Code Here
+        update()
 
     return "OK", 200
 

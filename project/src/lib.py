@@ -40,8 +40,6 @@ class Month(Enum):
     NOV = (11, "November")
     DEC = (12, "December")
 
-# TODO: Make a date string -> date
-
 class Date:
     def __init__(self,
         day:int,
@@ -118,6 +116,7 @@ class DateRange:
         return f"{self.start} - {self.end}"
 
 class Time:
+
     def __init__(self,
         hour:int,
         minute:int,
@@ -134,6 +133,13 @@ class Time:
         self.minute = minute
         self.meridiem = meridiem
 
+    def __eq__(self, other):
+        return (
+            self.hour == other.hour and
+            self.minute == other.minute and
+            self.meridiem == other.meridiem
+        )
+
     def to_minutes(self) -> int:
         minutes = self.hour % 12 + self.meridiem.value
         minutes *= 60
@@ -143,30 +149,36 @@ class Time:
     def __str__(self):
         return f"{self.hour}:{self.minute:02}{self.meridiem.name.lower()}"
 
+
 class TimeRange:
+
     def __init__(self,
         start:Time,
         end:Time
     ):
-        if not (start.to_minutes() < end.to_minutes()):
+        if not (start.to_minutes() <= end.to_minutes()):
             raise ValueError(f"ERROR: Invalid TimeRange {start} ~ {end}")
 
         self.start = start
         self.end = end
 
     def __str__(self):
-        return f"{self.start} - {self.end}"
 
-class Employee:
-    def __init__(self,
-        email:str,
-        name:str,
-        phone:str,
-        weekly_availability:list[TimeRange],
-        weekly_shifts_prefs:tuple[int,int]
-    ):
-        self.email = email
-        self.name = name
-        self.phone = phone
-        self.weekly_availability = weekly_availability
-        self.weekly_shifts_prefs = weekly_shifts_prefs
+        # ! Special Cases:
+        # * 4:04 AM -> NA (both)
+        # * 2:22 AM -> Open
+        # * 11:11 PM -> Close
+
+        if self.start == Time(4,4,Meridiem.AM) and self.end == Time(4,4,Meridiem.AM):
+            return "N/A"
+
+        if self.start == Time(2,22,Meridiem.AM) and self.end == Time(11,11,Meridiem.PM):
+            return "All Day"
+
+        if self.start == Time(2,22,Meridiem.AM):
+            return f"Open - {self.end}"
+
+        if self.end == Time(11,11,Meridiem.PM):
+            return f"{self.start} - Close"
+
+        return f"{self.start} - {self.end}"
