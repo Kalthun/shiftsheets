@@ -38,16 +38,23 @@ WA_KEY_MAP = {
     "saturday": "What is your weekly availability? [Saturday]",
     "sunday": "What is your weekly availability? [Sunday]",
     "custom": "Custom Availability",
-    "preferences": "How many shifts would you prefer each week? "
+    "preferences": "How many shifts would you prefer each week?"
 }
+
+# ================ #
 
 AA_PAGE = "AA"
 
 AA_KEY_MAP = {
-
+    "time": "Timestamp",
+    "email": "Email Address",
+    "start": "What day do you need your availability changed?",
+    "end": "What day does your availability go back to normal?",
+    "new": "What is your new availability?",
+    "custom": "Custom Availability"
 }
 
-# TODO: used as keys for the spreadsheet
+# ================ #
 
 WEEKS = {
     "May 26 - June 8" : lib.DateRange(lib.Date(26, lib.Month.MAY, 2025), lib.Date(8, lib.Month.JUN, 2025)),
@@ -63,23 +70,34 @@ WEEKS = {
     "Oct 13 - Oct 26" : lib.DateRange(lib.Date(13, lib.Month.OCT, 2025), lib.Date(26, lib.Month.OCT, 2025))
 }
 
-TEST_PAGE = "T-25-V1"
+# ================ #
 
-# ? NOTES:
+TEST_PAGE = "T25-V1"
+
 # B1 : Month Day - Month Day
-# D1 - J1 : week 1
-# L1 - R1 : week 2
+
+# B -> Phone
+# C -> Name
+# D -> Prefs
+
+# E1 - K1 : week 1
+# M1 - S1 : week 2
+
 # Col A for email linking
+
 # Row index by email
 
 # ================ #
 
-def get_page(name:str) -> pd.DataFrame:
+def get_page(name:str) -> pd.DataFrame | None:
 
     temp = service.spreadsheets().values().get(
         spreadsheetId = SHEET_ID,
         range = name
     ).execute().get("values", [])
+
+    if not temp:
+        return None
 
     return pd.DataFrame(temp[1:], columns=temp[0])
 
@@ -95,18 +113,22 @@ class Worker:
         email:str,
         name:str,
         phone:str,
-        weekly_availability:list[lib.TimeRange],
-        # weekly_shifts_prefs:tuple[int,int]
+        weekly_availability:dict[str,lib.TimeRange],
+        weekly_shifts_prefs:tuple[int,int]
     ):
         self.email = email
         self.name = name
         self.phone = phone
         self.weekly_availability = weekly_availability
-        # self.weekly_shifts_prefs = weekly_shifts_prefs
+        self.weekly_shifts_prefs = weekly_shifts_prefs
 
     def __str__(self):
-        availability_str = "\n".join(str(x) for x in self.weekly_availability)
-        return f"{self.email}: {self.name} | {self.phone}\n{availability_str}"
+        availability = "\n".join(
+            f"{day}: {str(time_range)}"
+            for day, time_range in self.weekly_availability.items()
+        )
+        preferences = f"{self.weekly_shifts_prefs[0]}" if self.weekly_shifts_prefs[0] == self.weekly_shifts_prefs[1] else f"{self.weekly_shifts_prefs[0]}-{self.weekly_shifts_prefs[1]}"
+        return f"{self.email}: {self.name} | {self.phone} | {preferences}\n{availability}"
 
 def get_workers(data:pd.DataFrame) -> list[Worker]:
 
@@ -124,45 +146,63 @@ def get_workers(data:pd.DataFrame) -> list[Worker]:
 
     for _,worker in data.iterrows():
 
-        weekly_availability:list[lib.TimeRange] = []
-
-        # TODO: Make this a function
+        weekly_availability:dict[str,lib.TimeRange] = {}
 
         for weekday in weekdays:
-            match worker[WA_KEY_MAP[weekday]]:
-                case "NA":
-                    weekly_availability.append(lib.TimeRange(lib.Time(4,4,lib.Meridiem.AM),lib.Time(4,4,lib.Meridiem.AM)))
-                case "Open":
-                    weekly_availability.append(lib.TimeRange(lib.Time(2,22,lib.Meridiem.AM),lib.Time(4,0,lib.Meridiem.PM)))
-                case "Close":
-                    weekly_availability.append(lib.TimeRange(lib.Time(2,0,lib.Meridiem.PM),lib.Time(11,11,lib.Meridiem.PM)))
-                case "All Day":
-                    weekly_availability.append(lib.TimeRange(lib.Time(2,22,lib.Meridiem.AM),lib.Time(11,11,lib.Meridiem.PM)))
-                case _:
-                    weekly_availability.append(lib.TimeRange(lib.Time(4,4,lib.Meridiem.AM),lib.Time(4,4,lib.Meridiem.AM)))
+            weekly_availability[weekday] = lib.convert_time(worker[WA_KEY_MAP[weekday]])
 
-        # TODO: seperate Custom by , then filter (re-use logic) (also make a function)
+        custom_availability = worker[WA_KEY_MAP["custom"]].split(",")
+
+        for custom in custom_availability:
+            if custom != "":
+                custom = "".join(custom.split())
+                days = custom.split(",")
+                for day in days:
+                    if day != "":
+                        temp = day.split(":",1)
+                        weekday = temp[0].lower()
+                        time_range = temp[1]
+                        mid = time_range.split("-")
+                        start = lib.Time(2,22,lib.Meridiem.AM) if mid[0] == "Open" else lib.string_to_time(mid[0])
+                        end = lib.Time(11,11,lib.Meridiem.PM) if mid[1] == "Close" else lib.string_to_time(mid[1])
+                        weekly_availability[weekday] = lib.TimeRange(start,end)
+
+        vals = list(map(int, worker[WA_KEY_MAP["preferences"]].split(",")))
+        preferences = tuple(vals if len(vals) == 2 else (vals[0], vals[0]))
 
         workers.append(Worker(
             email=worker[WA_KEY_MAP["email"]],
             name=worker[WA_KEY_MAP["name"]],
             phone=worker[WA_KEY_MAP["phone"]],
-            weekly_availability=weekly_availability
+            weekly_availability=weekly_availability,
+            weekly_shifts_prefs=preferences
         ))
 
-    for worker in workers:
-        print(worker)
-        print()
+    return workers
 
 # ================ #
 
 def update():
 
     WA_data = get_page(WA_PAGE)
-
     AA_data = get_page(AA_PAGE)
 
-    get_workers(WA_data)
+    # today = lib.date_to_date(lib.datetime.today())
+    # print(today)
+
+    workers = get_workers(WA_data)
+
+    for worker in workers:
+        print(worker)
+
+    for _,row in AA_data.iterrows():
+        # * 1: check time-range to current sheet
+        # * 2:
+        pass
+
+    for key,time_range in WEEKS.items():
+        # TODO: Fill in Values
+        pass
 
 # ================ #
 
@@ -182,6 +222,9 @@ def webhook():
     if payload.strip().lower() == "ping":
 
         update()
+
+    else:
+        return "Unrecognized payload", 400
 
     return "OK", 200
 

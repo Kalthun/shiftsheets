@@ -1,5 +1,5 @@
 from enum import Enum
-from datetime import date
+from datetime import date, datetime
 
 class Meridiem(Enum):
     AM = 0
@@ -92,6 +92,9 @@ class Date:
     def __str__(self):
         return f"{self.weekday.label} {self.day}/{self.month.label}/{self.year}"
 
+def date_to_date(date:date) -> Date:
+    return Date(date.day, Month(date.month), date.year)
+
 class DateRange:
     def __init__(self,
         start:Date,
@@ -149,6 +152,23 @@ class Time:
     def __str__(self):
         return f"{self.hour}:{self.minute:02}{self.meridiem.name.lower()}"
 
+# TODO: Specific Time Dictionary
+
+def string_to_time(string:str) -> Time:
+
+    if string == "Open":
+        return Time(2,22,Meridiem.AM)
+
+    if string == "Close":
+        return Time(11,11,Meridiem.PM)
+
+    temp = string.split(":")
+
+    hour = int(temp[0])
+    minute = int(temp[1][:2])
+    meridian = Meridiem.AM if temp[1][2:] == "am" else Meridiem.PM
+
+    return Time(hour,minute,meridian)
 
 class TimeRange:
 
@@ -170,7 +190,7 @@ class TimeRange:
         # * 11:11 PM -> Close
 
         if self.start == Time(4,4,Meridiem.AM) and self.end == Time(4,4,Meridiem.AM):
-            return "N/A"
+            return "NA"
 
         if self.start == Time(2,22,Meridiem.AM) and self.end == Time(11,11,Meridiem.PM):
             return "All Day"
@@ -182,3 +202,22 @@ class TimeRange:
             return f"{self.start} - Close"
 
         return f"{self.start} - {self.end}"
+
+def convert_time(string:str) -> TimeRange:
+
+    match string:
+
+        case "NA":
+            return TimeRange(Time(4,4,Meridiem.AM),Time(4,4,Meridiem.AM))
+
+        case "Open":
+            return TimeRange(Time(2,22,Meridiem.AM),Time(4,0,Meridiem.PM))
+
+        case "Close":
+            return TimeRange(Time(2,0,Meridiem.PM),Time(11,11,Meridiem.PM))
+
+        case "All Day":
+            return TimeRange(Time(2,22,Meridiem.AM),Time(11,11,Meridiem.PM))
+
+        case _:
+            return TimeRange(Time(4,4,Meridiem.AM),Time(4,4,Meridiem.AM))
