@@ -22,6 +22,9 @@ service = build("sheets", "v4", credentials=credentials)
 # ================ #
 
 SHEET_ID = "1vID-hTj_GR0XUpynUm1BnLNL28BTV2JHxe_a2LIssAw"
+TEMPLATE_ID = "T25-V1"
+
+# ================ #
 
 WA_PAGE = "WA"
 
@@ -72,8 +75,6 @@ WEEKS = {
 
 # ================ #
 
-TEST_PAGE = "T25-V1"
-
 # B1 : Month Day - Month Day
 
 # B -> Phone
@@ -88,6 +89,11 @@ TEST_PAGE = "T25-V1"
 # Row index by email
 
 # ================ #
+
+def get_page_names(sheet_id:str) -> list[str]:
+    response = service.spreadsheets().get(spreadsheetId=sheet_id).execute()
+    sheets = response.get("sheets", [])
+    return [sheet["properties"]["title"] for sheet in sheets]
 
 def get_page(name:str) -> pd.DataFrame | None:
 
@@ -114,21 +120,22 @@ class Worker:
         name:str,
         phone:str,
         weekly_availability:dict[str,lib.TimeRange],
-        weekly_shifts_prefs:tuple[int,int]
+        preferences:str # ! see commit "here we are" for tuple
     ):
-        self.email = email
-        self.name = name
-        self.phone = phone
+        self.email = email.strip()
+        self.name = name.strip()
+        self.phone = phone.strip()
         self.weekly_availability = weekly_availability
-        self.weekly_shifts_prefs = weekly_shifts_prefs
+        self.preferences = preferences.strip()
 
     def __str__(self):
         availability = "\n".join(
             f"{day}: {str(time_range)}"
             for day, time_range in self.weekly_availability.items()
         )
-        preferences = f"{self.weekly_shifts_prefs[0]}" if self.weekly_shifts_prefs[0] == self.weekly_shifts_prefs[1] else f"{self.weekly_shifts_prefs[0]}-{self.weekly_shifts_prefs[1]}"
-        return f"{self.email}: {self.name} | {self.phone} | {preferences}\n{availability}"
+        return f"{self.email}: {self.name} | {self.phone} | {self.preferences}\n{availability}"
+
+# ================ #
 
 def get_workers(data:pd.DataFrame) -> list[Worker]:
 
@@ -154,11 +161,13 @@ def get_workers(data:pd.DataFrame) -> list[Worker]:
         custom_availability = worker[WA_KEY_MAP["custom"]].split(",")
 
         for custom in custom_availability:
+            # TODO: Consider wrapping in function
             if custom != "":
                 custom = "".join(custom.split())
                 days = custom.split(",")
                 for day in days:
                     if day != "":
+                        # TODO: At least this part
                         temp = day.split(":",1)
                         weekday = temp[0].lower()
                         time_range = temp[1]
@@ -167,42 +176,74 @@ def get_workers(data:pd.DataFrame) -> list[Worker]:
                         end = lib.Time(11,11,lib.Meridiem.PM) if mid[1] == "Close" else lib.string_to_time(mid[1])
                         weekly_availability[weekday] = lib.TimeRange(start,end)
 
-        vals = list(map(int, worker[WA_KEY_MAP["preferences"]].split(",")))
-        preferences = tuple(vals if len(vals) == 2 else (vals[0], vals[0]))
+        temp = worker[WA_KEY_MAP["preferences"]].split(",")
+        preferences = temp[0] if len(temp) < 2 else f"{temp[0].strip()}-{temp[1].strip()}"
 
         workers.append(Worker(
             email=worker[WA_KEY_MAP["email"]],
             name=worker[WA_KEY_MAP["name"]],
             phone=worker[WA_KEY_MAP["phone"]],
             weekly_availability=weekly_availability,
-            weekly_shifts_prefs=preferences
+            preferences=preferences
         ))
 
     return workers
 
 # ================ #
 
-def update():
+# TODO: use in get worker instead
+def get_indexs(sheet:str, page:str, emails:list[str]) -> dict[str,int]:
 
-    WA_data = get_page(WA_PAGE)
-    AA_data = get_page(AA_PAGE)
+    entries = service.spreadsheets().values().get(
+        spreadsheetId=sheet,
+        range=f"{page}!A1:A78"
+    ).execute().get("values", [])
+
+    entries = [row[0] if row else "" for row in entries]
+    temp:dict[str,int] = {}
+
+    for email in emails:
+        temp[email] = entries.index(email) + 1
+
+    return temp
+
+# ================ #
+
+def fill_row(page:str, worker:Worker):
+    pass
+
+# ================ #
+
+def update():
 
     # today = lib.date_to_date(lib.datetime.today())
     # print(today)
+
+    WA_data = get_page(WA_PAGE)
 
     workers = get_workers(WA_data)
 
     for worker in workers:
         print(worker)
+        print()
 
-    for _,row in AA_data.iterrows():
-        # * 1: check time-range to current sheet
-        # * 2:
-        pass
+    for key,value in get_indexs(SHEET_ID, TEMPLATE_ID, [worker.email for worker in workers]).items():
+        print(f"{key}:{value}")
 
-    for key,time_range in WEEKS.items():
-        # TODO: Fill in Values
-        pass
+    # TODO: Do this in get workers as well
+    AA_data = get_page(AA_PAGE)
+    # for _,row in AA_data.iterrows():
+    #     # * 1: check time-range to current sheet
+    #     # * 2:
+    #     pass
+
+    weeks = list(WEEKS.keys()) # * Only fill weeks that exist
+    pages = get_page_names(SHEET_ID)
+    active_periods = list(set(weeks) & set(pages))
+
+    for biweek in active_periods:
+        for worker in workers:
+            fill_row(biweek,worker)
 
 # ================ #
 
