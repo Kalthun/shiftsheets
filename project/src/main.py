@@ -231,6 +231,7 @@ def update():
         print(f"{key}:{value}")
 
     # TODO: Do this in get workers as well
+    # ! NOTE: write errors to output file
     AA_data = get_page(AA_PAGE)
     # for _,row in AA_data.iterrows():
     #     # * 1: check time-range to current sheet
