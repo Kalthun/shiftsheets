@@ -119,19 +119,19 @@ class Worker:
         email:str,
         name:str,
         phone:str,
-        weekly_availability:dict[str,lib.TimeRange],
+        availability:dict[str,lib.TimeRange],
         preferences:str # ! see commit "here we are" for tuple
     ):
         self.email = email.strip()
         self.name = name.strip()
         self.phone = phone.strip()
-        self.weekly_availability = weekly_availability
+        self.availability = availability
         self.preferences = preferences.strip()
 
     def __str__(self):
         availability = "\n".join(
             f"{day}: {str(time_range)}"
-            for day, time_range in self.weekly_availability.items()
+            for day, time_range in self.availability.items()
         )
         return f"{self.email}: {self.name} | {self.phone} | {self.preferences}\n{availability}"
 
@@ -183,7 +183,7 @@ def get_workers(data:pd.DataFrame) -> list[Worker]:
             email=worker[WA_KEY_MAP["email"]],
             name=worker[WA_KEY_MAP["name"]],
             phone=worker[WA_KEY_MAP["phone"]],
-            weekly_availability=weekly_availability,
+            availability=weekly_availability,
             preferences=preferences
         ))
 
@@ -191,7 +191,6 @@ def get_workers(data:pd.DataFrame) -> list[Worker]:
 
 # ================ #
 
-# TODO: use in get worker instead
 def get_indexs(sheet:str, page:str, emails:list[str]) -> dict[str,int]:
 
     entries = service.spreadsheets().values().get(
@@ -209,26 +208,15 @@ def get_indexs(sheet:str, page:str, emails:list[str]) -> dict[str,int]:
 
 # ================ #
 
-def fill_row(page:str, worker:Worker):
+def fill_page(page:str, workers:list[Worker]):
     pass
 
 # ================ #
 
 def update():
 
-    # today = lib.date_to_date(lib.datetime.today())
-    # print(today)
-
     WA_data = get_page(WA_PAGE)
-
     workers = get_workers(WA_data)
-
-    for worker in workers:
-        print(worker)
-        print()
-
-    for key,value in get_indexs(SHEET_ID, TEMPLATE_ID, [worker.email for worker in workers]).items():
-        print(f"{key}:{value}")
 
     # TODO: Do this in get workers as well
     # ! NOTE: write errors to output file
@@ -238,13 +226,15 @@ def update():
     #     # * 2:
     #     pass
 
-    weeks = list(WEEKS.keys()) # * Only fill weeks that exist
-    pages = get_page_names(SHEET_ID)
-    active_periods = list(set(weeks) & set(pages))
+    # weeks = list(WEEKS.keys()) # * Only fill weeks that exist
+    # pages = get_page_names(SHEET_ID)
+    # active_periods = list(set(weeks) & set(pages))
 
-    for biweek in active_periods:
-        for worker in workers:
-            fill_row(biweek,worker)
+    # for biweek in active_periods:
+    #     fill_page(biweek,workers)
+
+    current_week = "June 9 - June 22"
+    fill_page(current_week,workers)
 
 # ================ #
 
