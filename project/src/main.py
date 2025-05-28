@@ -1,4 +1,4 @@
-from flask import Flask, request
+# from flask import Flask, request
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
@@ -12,7 +12,8 @@ import lib
 
 BASE_PATH = pathlib.Path.cwd().resolve()
 SERVICE_ACCOUNT_PATH = BASE_PATH / "project" / "keys" / "service-account-key.json"
-SECRET_TOKEN_PATH = BASE_PATH / "project" / "keys" / "secret-token.txt"
+# SECRET_TOKEN_PATH = BASE_PATH / "project" / "keys" / "secret-token.txt"
+ERROR_PATH = BASE_PATH / "project" / "outputs" / "errors.txt"
 
 # ================ #
 
@@ -75,21 +76,6 @@ WEEKS = {
 
 # ================ #
 
-# B1 : Month Day - Month Day
-
-# B -> Phone
-# C -> Name
-# D -> Prefs
-
-# E1 - K1 : week 1
-# M1 - S1 : week 2
-
-# Col A for email linking
-
-# Row index by email
-
-# ================ #
-
 def get_page_names(sheet_id:str) -> list[str]:
     response = service.spreadsheets().get(spreadsheetId=sheet_id).execute()
     sheets = response.get("sheets", [])
@@ -107,8 +93,7 @@ def get_page(name:str) -> pd.DataFrame | None:
 
     return pd.DataFrame(temp[1:], columns=temp[0])
 
-def display_page(page):
-
+def display_page(page:pd.DataFrame):
     print(tabulate(get_page(page), headers="keys", tablefmt="fancy_grid", showindex=False))
 
 # ================ #
@@ -120,26 +105,39 @@ class Worker:
         name:str,
         phone:str,
         availability:dict[str,lib.TimeRange],
-        preferences:str # ! see commit "here we are" for tuple
+        alternate:list[tuple[lib.Date,lib.TimeRange]],
+        preferences:tuple[int,int]
     ):
         self.email = email.strip()
         self.name = name.strip()
         self.phone = phone.strip()
         self.availability = availability
-        self.preferences = preferences.strip()
+        self.alternate = alternate
+        self.preferences = preferences
 
     def __str__(self):
+
         availability = "\n".join(
             f"{day}: {str(time_range)}"
             for day, time_range in self.availability.items()
         )
-        return f"{self.email}: {self.name} | {self.phone} | {self.preferences}\n{availability}"
+
+        alternate = "\n".join(
+            f"{str(date)} → {str(time_range)}"
+            for date, time_range in self.alternate
+        )
+
+        preferences = f"{self.preferences[0]}" if self.preferences[0] == self.preferences[1] else f"{self.preferences[0]}-{self.preferences[1]}"
+
+        return f"{self.email}: {self.name} | {self.phone} | {preferences}\n\n{availability}\n\n{alternate}"
 
 # ================ #
 
 def get_workers(data:pd.DataFrame) -> list[Worker]:
 
     workers:list[Worker] = []
+
+    AA_data = get_page(AA_PAGE)
 
     weekdays = [
             "monday",
@@ -153,6 +151,7 @@ def get_workers(data:pd.DataFrame) -> list[Worker]:
 
     for _,worker in data.iterrows():
 
+        # TODO: Add custom in the convert_time step
         weekly_availability:dict[str,lib.TimeRange] = {}
 
         for weekday in weekdays:
@@ -161,29 +160,55 @@ def get_workers(data:pd.DataFrame) -> list[Worker]:
         custom_availability = worker[WA_KEY_MAP["custom"]].split(",")
 
         for custom in custom_availability:
-            # TODO: Consider wrapping in function
             if custom != "":
                 custom = "".join(custom.split())
                 days = custom.split(",")
                 for day in days:
                     if day != "":
-                        # TODO: At least this part
                         temp = day.split(":",1)
                         weekday = temp[0].lower()
                         time_range = temp[1]
-                        mid = time_range.split("-")
-                        start = lib.Time(2,22,lib.Meridiem.AM) if mid[0] == "Open" else lib.string_to_time(mid[0])
-                        end = lib.Time(11,11,lib.Meridiem.PM) if mid[1] == "Close" else lib.string_to_time(mid[1])
-                        weekly_availability[weekday] = lib.TimeRange(start,end)
+                        weekly_availability[weekday] = lib.custom_time(time_range)
+
+        alternate_availability:list[tuple[lib.Date,lib.TimeRange]] = []
+
+        for _,entry in AA_data[AA_data[AA_KEY_MAP["email"]] == worker[WA_KEY_MAP["email"]]].iterrows():
+
+            start = lib.string_to_date(entry[AA_KEY_MAP["start"]])
+
+            if entry[AA_KEY_MAP["end"]] == "":
+                if entry[AA_KEY_MAP["new"]] == "Custom":
+                    alternate_availability.append((start,lib.custom_time(entry[AA_KEY_MAP["custom"]])))
+                else:
+                    alternate_availability.append((start,lib.convert_time(entry[AA_KEY_MAP["new"]])))
+
+            else:
+                end = lib.string_to_date(entry[AA_KEY_MAP["end"]])
+
+                if end < start:
+                    timestamp = lib.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    with open(ERROR_PATH, "a") as f:
+                        f.write(f"[{timestamp}] Invalid date range: {start} to {end} for {worker[WA_KEY_MAP['name']]} <{worker[WA_KEY_MAP['email']]}>.\n\n")
+                    continue
+
+                date_range = lib.DateRange(start,end)
+                days = date_range.to_date_list()
+
+                for day in days:
+                    if entry[AA_KEY_MAP["new"]] == "Custom":
+                        alternate_availability.append((day,lib.custom_time(entry[AA_KEY_MAP["custom"]])))
+                    else:
+                        alternate_availability.append((day,lib.convert_time(entry[AA_KEY_MAP["new"]])))
 
         temp = worker[WA_KEY_MAP["preferences"]].split(",")
-        preferences = temp[0] if len(temp) < 2 else f"{temp[0].strip()}-{temp[1].strip()}"
+        preferences = (int(temp[0]),int(temp[0])) if len(temp) < 2 else (int(temp[0]),int(temp[1]))
 
         workers.append(Worker(
             email=worker[WA_KEY_MAP["email"]],
-            name=worker[WA_KEY_MAP["name"]],
+            name=worker[WA_KEY_MAP["name"]], # TODO: Fix Case
             phone=worker[WA_KEY_MAP["phone"]],
             availability=weekly_availability,
+            alternate=alternate_availability,
             preferences=preferences
         ))
 
@@ -208,57 +233,74 @@ def get_indexs(sheet:str, page:str, emails:list[str]) -> dict[str,int]:
 
 # ================ #
 
-def fill_page(page:str, workers:list[Worker]):
-    pass
+# E1 - K1 : week 1
+# M1 - S1 : week 2
 
 # ================ #
 
-def update():
+def fill_page(sheet: str, page:str, workers:list[Worker]):
 
-    WA_data = get_page(WA_PAGE)
-    workers = get_workers(WA_data)
+    weeks = WEEKS[page]
 
-    # TODO: Do this in get workers as well
-    # ! NOTE: write errors to output file
-    AA_data = get_page(AA_PAGE)
-    # for _,row in AA_data.iterrows():
-    #     # * 1: check time-range to current sheet
-    #     # * 2:
-    #     pass
+    week_days = weeks.to_date_list()
+    week1 = week_days[:7]
+    week2 = week_days[7:14]
 
-    # weeks = list(WEEKS.keys()) # * Only fill weeks that exist
-    # pages = get_page_names(SHEET_ID)
-    # active_periods = list(set(weeks) & set(pages))
+    weekdays = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
 
-    # for biweek in active_periods:
-    #     fill_page(biweek,workers)
+    indexes = get_indexs(sheet, page, [worker.email for worker in workers])
 
-    current_week = "June 9 - June 22"
-    fill_page(current_week,workers)
+    for worker in workers:
+
+        prefs = (
+            f"{worker.preferences[0]}"
+            if worker.preferences[0] == worker.preferences[1]
+            else f"{worker.preferences[0]}-{worker.preferences[1]}"
+        )
+
+        input = [worker.phone, worker.name, prefs]
+
+        # Week 1
+
+        # Week 2
+
+        # Other
+
+        service.spreadsheets().values().update(
+            spreadsheetId=sheet,
+            range=f"{page}!B{indexes[worker.email]}:D{indexes[worker.email]}",
+            valueInputOption="RAW",
+            body={"values": [input]}
+        ).execute()
 
 # ================ #
 
-update()
+# app = Flask(__name__)
 
-app = Flask(__name__)
+# @app.route("/webhook", methods=["POST"])
+# def webhook():
 
-@app.route("/webhook", methods=["POST"])
-def webhook():
+#     key = request.headers.get("Authorization")
 
-    key = request.headers.get("Authorization")
+#     if key != open(SECRET_TOKEN_PATH).read().strip():
+#         return "Forbidden, 403"
 
-    if key != open(SECRET_TOKEN_PATH).read().strip():
-        return "Forbidden, 403"
+#     payload = request.data.decode("utf-8")
+#     if payload.strip().lower() == "ping":
 
-    payload = request.data.decode("utf-8")
-    if payload.strip().lower() == "ping":
+#         update()
 
-        update()
+#     else:
+#         return "Unrecognized payload", 400
 
-    else:
-        return "Unrecognized payload", 400
+#     return "OK", 200
 
-    return "OK", 200
+# if __name__ == "__main__":
+#     app.run(port=5000)
 
-if __name__ == "__main__":
-    app.run(port=5000)
+# ================ #
+
+WA_data = get_page(WA_PAGE)
+workers = get_workers(WA_data)
+
+fill_page(SHEET_ID, TEMPLATE_ID, workers)

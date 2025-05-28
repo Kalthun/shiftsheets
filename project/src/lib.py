@@ -1,5 +1,5 @@
 from enum import Enum
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 class Meridiem(Enum):
     AM = 0
@@ -95,6 +95,13 @@ class Date:
 def date_to_date(date:date) -> Date:
     return Date(date.day, Month(date.month), date.year)
 
+def string_to_date(string:str) -> Date:
+    temp = string.split("/")
+    day = int(temp[1])
+    month = Month(int(temp[0]))
+    year = int(temp[2])
+    return Date(day,month,year)
+
 class DateRange:
     def __init__(self,
         start:Date,
@@ -108,6 +115,16 @@ class DateRange:
 
     def within_range(self, day:Date) -> bool:
         return self.start <= day <= self.end
+
+    def to_date_list(self) -> list[Date]:
+        temp = []
+        current = self.start.date_to_date()
+
+        while current <= self.end.date_to_date():
+            temp.append(date_to_date(current))
+            current += timedelta(days=1)
+
+        return temp
 
     def week_day_display(self):
         return f"{self.start.weekday.label} {self.start.day} - {self.end.weekday.label} {self.end.day}"
@@ -150,7 +167,7 @@ class Time:
         return minutes
 
     def __str__(self):
-        return f"{self.hour}:{self.minute:02}{self.meridiem.name.lower()}"
+        return f"{self.hour}:{self.minute:02} {self.meridiem.name.upper()}"
 
 # TODO: Specific Time Dictionary
 
@@ -189,6 +206,9 @@ class TimeRange:
         # * 2:22 AM -> Open
         # * 11:11 PM -> Close
 
+        if self.start == Time(1,1,Meridiem.AM) and self.end == Time(1,1,Meridiem.AM):
+            return "ERROR"
+
         if self.start == Time(4,4,Meridiem.AM) and self.end == Time(4,4,Meridiem.AM):
             return "NA"
 
@@ -220,4 +240,11 @@ def convert_time(string:str) -> TimeRange:
             return TimeRange(Time(2,22,Meridiem.AM),Time(11,11,Meridiem.PM))
 
         case _:
-            return TimeRange(Time(4,4,Meridiem.AM),Time(4,4,Meridiem.AM))
+            return TimeRange(Time(1,1,Meridiem.AM),Time(1,1,Meridiem.AM))
+
+def custom_time(string:str) -> TimeRange:
+    string = "".join(string.split())
+    mid = string.split("-")
+    start = Time(2,22,Meridiem.AM) if mid[0] == "Open" else string_to_time(mid[0])
+    end = Time(11,11,Meridiem.PM) if mid[1] == "Close" else string_to_time(mid[1])
+    return TimeRange(start,end)
