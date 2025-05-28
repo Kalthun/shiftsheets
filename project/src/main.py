@@ -23,7 +23,6 @@ service = build("sheets", "v4", credentials=credentials)
 # ================ #
 
 SHEET_ID = "1vID-hTj_GR0XUpynUm1BnLNL28BTV2JHxe_a2LIssAw"
-TEMPLATE_ID = "T25-V1"
 
 # ================ #
 
@@ -133,6 +132,11 @@ class Worker:
 
 # ================ #
 
+def sort_AA(data:list[tuple[lib.Date,lib.TimeRange]]) -> list[tuple[lib.Date,lib.TimeRange]]:
+    return sorted(data, key=lambda x: x[0])
+
+# ================ #
+
 def get_workers(data:pd.DataFrame) -> list[Worker]:
 
     workers:list[Worker] = []
@@ -185,6 +189,7 @@ def get_workers(data:pd.DataFrame) -> list[Worker]:
             else:
                 end = lib.string_to_date(entry[AA_KEY_MAP["end"]])
 
+                # TODO: Make seperate function
                 if end < start:
                     timestamp = lib.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     with open(ERROR_PATH, "a") as f:
@@ -199,6 +204,8 @@ def get_workers(data:pd.DataFrame) -> list[Worker]:
                         alternate_availability.append((day,lib.custom_time(entry[AA_KEY_MAP["custom"]])))
                     else:
                         alternate_availability.append((day,lib.convert_time(entry[AA_KEY_MAP["new"]])))
+
+        alternate_availability = sort_AA(alternate_availability)
 
         temp = worker[WA_KEY_MAP["preferences"]].split(",")
         preferences = (int(temp[0]),int(temp[0])) if len(temp) < 2 else (int(temp[0]),int(temp[1]))
@@ -242,9 +249,9 @@ def fill_page(sheet: str, page:str, workers:list[Worker]):
 
     weeks = WEEKS[page]
 
-    week_days = weeks.to_date_list()
-    week1 = week_days[:7]
-    week2 = week_days[7:14]
+    week_days:list[lib.Date] = weeks.to_date_list()
+    week1:list[lib.Date] = week_days[:7]
+    week2:list[lib.Date] = week_days[7:14]
 
     weekdays = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
 
@@ -258,17 +265,23 @@ def fill_page(sheet: str, page:str, workers:list[Worker]):
             else f"{worker.preferences[0]}-{worker.preferences[1]}"
         )
 
-        input = [worker.phone, worker.name, prefs]
+        week1_values = []
+        for date in week1:
+            override = next((t for d, t in worker.alternate if d == date), None)
+            default = worker.availability[date.weekday.label.lower()]
+            week1_values.append(str(override if override else default))
 
-        # Week 1
+        week2_values = []
+        for date in week2:
+            override = next((t for d, t in worker.alternate if d == date), None)
+            default = worker.availability[date.weekday.label.lower()]
+            week2_values.append(str(override if override else default))
 
-        # Week 2
-
-        # Other
+        input = [worker.phone, worker.name, prefs] + week1_values + [""] + week2_values
 
         service.spreadsheets().values().update(
             spreadsheetId=sheet,
-            range=f"{page}!B{indexes[worker.email]}:D{indexes[worker.email]}",
+            range=f"{page}!B{indexes[worker.email]}:S{indexes[worker.email]}",
             valueInputOption="RAW",
             body={"values": [input]}
         ).execute()
@@ -300,7 +313,13 @@ def fill_page(sheet: str, page:str, workers:list[Worker]):
 
 # ================ #
 
+current_week = "June 9 - June 22"
+
 WA_data = get_page(WA_PAGE)
 workers = get_workers(WA_data)
 
-fill_page(SHEET_ID, TEMPLATE_ID, workers)
+# for worker in workers:
+#     if worker.email == "drewrome07@gmail.com":
+#         print(worker)
+
+fill_page(SHEET_ID, current_week, workers)
