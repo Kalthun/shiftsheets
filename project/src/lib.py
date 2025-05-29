@@ -89,6 +89,9 @@ class Date:
             return self.date_to_date() >= other.date_to_date()
         return NotImplemented
 
+    def __hash__(self):
+        return hash((self.day, self.month.value, self.year))
+
     def __str__(self):
         return f"{self.weekday.label} {self.day}/{self.month.label}/{self.year}"
 
@@ -151,13 +154,22 @@ class Time:
 
         self.hour = hour
         self.minute = minute
+        self.second = 0
         self.meridiem = meridiem
 
     def __eq__(self, other):
         return (
             self.hour == other.hour and
             self.minute == other.minute and
+            self.second == other.second and
             self.meridiem == other.meridiem
+        )
+
+    def __gt__(self, other):
+        return (
+            (self.meridiem.value * 60 * 60 + (self.hour % 12) * 60 + self.minute, self.second)
+            >
+            (other.meridiem.value * 60 * 60 + (other.hour % 12) * 60 + other.minute, other.second)
         )
 
     def to_minutes(self) -> int:
@@ -165,6 +177,9 @@ class Time:
         minutes *= 60
         minutes += self.minute
         return minutes
+
+    def __hash__(self):
+        return hash((self.hour, self.minute, self.second, self.meridiem.value))
 
     def __str__(self):
         return f"{self.hour}:{self.minute:02} {self.meridiem.name.upper()}"
@@ -248,3 +263,18 @@ def custom_time(string:str) -> TimeRange:
     start = Time(2,22,Meridiem.AM) if mid[0] == "Open" else string_to_time(mid[0])
     end = Time(11,11,Meridiem.PM) if mid[1] == "Close" else string_to_time(mid[1])
     return TimeRange(start,end)
+
+def string_to_Date_Time(string:str) -> tuple[Date,Time]:
+
+    date_part, time_part = string.strip().split(" ")
+
+    temp_date = string_to_date(date_part)
+
+    hour, minute, second = map(int, time_part.split(":"))
+    meridiem = Meridiem.AM if hour < 12 else Meridiem.PM
+    hour = hour if 1 <= hour <= 12 else hour - 12 if hour > 12 else 12
+
+    temp_time = Time(hour, minute, meridiem)
+    temp_time.second = second
+
+    return temp_date, temp_time

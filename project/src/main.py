@@ -46,6 +46,12 @@ WA_KEY_MAP = {
 
 # ================ #
 
+# TODO: Get rid of old AA entries
+def remove_old():
+    pass
+
+# ================ #
+
 AA_PAGE = "AA"
 
 AA_KEY_MAP = {
@@ -104,7 +110,7 @@ class Worker:
         name:str,
         phone:str,
         availability:dict[str,lib.TimeRange],
-        alternate:list[tuple[lib.Date,lib.TimeRange]],
+        alternate:list[tuple[lib.Date,lib.TimeRange,tuple[lib.Date,lib.Time]]],
         preferences:tuple[int,int]
     ):
         self.email = email.strip()
@@ -121,9 +127,15 @@ class Worker:
             for day, time_range in self.availability.items()
         )
 
-        alternate = "\n".join(
-            f"{str(date)} → {str(time_range)}"
-            for date, time_range in self.alternate
+        alternate_table = [
+            [str(date), str(time_range), f"{timestamp[0]} {timestamp[1]}"]
+            for date, time_range, timestamp in self.alternate
+        ]
+
+        alternate = tabulate(
+            alternate_table,
+            headers=["Date", "Time Range", "Submitted At"],
+            tablefmt="grid"
         )
 
         preferences = f"{self.preferences[0]}" if self.preferences[0] == self.preferences[1] else f"{self.preferences[0]}-{self.preferences[1]}"
@@ -132,8 +144,19 @@ class Worker:
 
 # ================ #
 
-def sort_AA(data:list[tuple[lib.Date,lib.TimeRange]]) -> list[tuple[lib.Date,lib.TimeRange]]:
-    return sorted(data, key=lambda x: x[0])
+def clean_AA(data:list[tuple[lib.Date,lib.TimeRange,tuple[lib.Date,lib.Time]]]) -> list[tuple[lib.Date,lib.TimeRange,tuple[lib.Date,lib.Time]]]:
+
+    latest_map: dict[lib.Date, tuple[lib.TimeRange, tuple[lib.Date, lib.Time]]] = {}
+
+    for date_of, time_range, timestamp in data:
+        if date_of not in latest_map:
+            latest_map[date_of] = (time_range, timestamp)
+        else:
+            _, existing_timestamp = latest_map[date_of]
+            if timestamp > existing_timestamp:  # your Date + Time comparison works directly
+                latest_map[date_of] = (time_range, timestamp)
+
+    return [(date, time_range, timestamp) for date, (time_range, timestamp) in latest_map.items()]
 
 # ================ #
 
@@ -174,7 +197,7 @@ def get_workers(data:pd.DataFrame) -> list[Worker]:
                         time_range = temp[1]
                         weekly_availability[weekday] = lib.custom_time(time_range)
 
-        alternate_availability:list[tuple[lib.Date,lib.TimeRange]] = []
+        alternate_availability: list[tuple[lib.Date, lib.TimeRange, tuple[lib.Date, lib.Time]]] = []
 
         for _,entry in AA_data[AA_data[AA_KEY_MAP["email"]] == worker[WA_KEY_MAP["email"]]].iterrows():
 
@@ -182,9 +205,9 @@ def get_workers(data:pd.DataFrame) -> list[Worker]:
 
             if entry[AA_KEY_MAP["end"]] == "":
                 if entry[AA_KEY_MAP["new"]] == "Custom":
-                    alternate_availability.append((start,lib.custom_time(entry[AA_KEY_MAP["custom"]])))
+                    alternate_availability.append((start,lib.custom_time(entry[AA_KEY_MAP["custom"]]),lib.string_to_Date_Time(entry[AA_KEY_MAP["time"]])))
                 else:
-                    alternate_availability.append((start,lib.convert_time(entry[AA_KEY_MAP["new"]])))
+                    alternate_availability.append((start,lib.convert_time(entry[AA_KEY_MAP["new"]]),lib.string_to_Date_Time(entry[AA_KEY_MAP["time"]])))
 
             else:
                 end = lib.string_to_date(entry[AA_KEY_MAP["end"]])
@@ -201,11 +224,12 @@ def get_workers(data:pd.DataFrame) -> list[Worker]:
 
                 for day in days:
                     if entry[AA_KEY_MAP["new"]] == "Custom":
-                        alternate_availability.append((day,lib.custom_time(entry[AA_KEY_MAP["custom"]])))
+                        alternate_availability.append((day,lib.custom_time(entry[AA_KEY_MAP["custom"]]),lib.string_to_Date_Time(entry[AA_KEY_MAP["time"]])))
                     else:
-                        alternate_availability.append((day,lib.convert_time(entry[AA_KEY_MAP["new"]])))
+                        alternate_availability.append((day,lib.convert_time(entry[AA_KEY_MAP["new"]]),lib.string_to_Date_Time(entry[AA_KEY_MAP["time"]])))
 
-        alternate_availability = sort_AA(alternate_availability)
+        alternate_availability = clean_AA(alternate_availability)
+        alternate_availability.sort(key=lambda x: x[0])
 
         temp = worker[WA_KEY_MAP["preferences"]].split(",")
         preferences = (int(temp[0]),int(temp[0])) if len(temp) < 2 else (int(temp[0]),int(temp[1]))
@@ -240,11 +264,6 @@ def get_indexs(sheet:str, page:str, emails:list[str]) -> dict[str,int]:
 
 # ================ #
 
-# E1 - K1 : week 1
-# M1 - S1 : week 2
-
-# ================ #
-
 def fill_page(sheet: str, page:str, workers:list[Worker]):
 
     weeks = WEEKS[page]
@@ -252,8 +271,6 @@ def fill_page(sheet: str, page:str, workers:list[Worker]):
     week_days:list[lib.Date] = weeks.to_date_list()
     week1:list[lib.Date] = week_days[:7]
     week2:list[lib.Date] = week_days[7:14]
-
-    weekdays = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
 
     indexes = get_indexs(sheet, page, [worker.email for worker in workers])
 
@@ -267,13 +284,13 @@ def fill_page(sheet: str, page:str, workers:list[Worker]):
 
         week1_values = []
         for date in week1:
-            override = next((t for d, t in worker.alternate if d == date), None)
+            override = next((t for d, t, _ in worker.alternate if d == date), None)
             default = worker.availability[date.weekday.label.lower()]
             week1_values.append(str(override if override else default))
 
         week2_values = []
         for date in week2:
-            override = next((t for d, t in worker.alternate if d == date), None)
+            override = next((t for d, t, _ in worker.alternate if d == date), None)
             default = worker.availability[date.weekday.label.lower()]
             week2_values.append(str(override if override else default))
 
@@ -318,8 +335,8 @@ current_week = "June 9 - June 22"
 WA_data = get_page(WA_PAGE)
 workers = get_workers(WA_data)
 
-# for worker in workers:
-#     if worker.email == "drewrome07@gmail.com":
-#         print(worker)
+for worker in workers:
+    if worker.email == "drewrome07@gmail.com":
+        print(worker)
 
 fill_page(SHEET_ID, current_week, workers)
