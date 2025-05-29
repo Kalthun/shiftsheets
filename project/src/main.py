@@ -336,7 +336,7 @@ WA_data = get_page(WA_PAGE)
 workers = get_workers(WA_data)
 
 for worker in workers:
-    if worker.email == "drewrome07@gmail.com":
+    if worker.email == "jamesmcmail55@gmail.com":
         print(worker)
 
 fill_page(SHEET_ID, current_week, workers)
