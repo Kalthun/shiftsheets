@@ -331,12 +331,13 @@ def fill_page(sheet: str, page:str, workers:list[Worker]):
 # ================ #
 
 current_week = "June 9 - June 22"
+temp = "June 23 - July 6"
 
 WA_data = get_page(WA_PAGE)
 workers = get_workers(WA_data)
 
-for worker in workers:
-    if worker.email == "aivallingner@gmail.com":
-        print(worker)
+# for worker in workers:
+#     if worker.email == "aivallingner@gmail.com":
+#         print(worker)
 
-# fill_page(SHEET_ID, current_week, workers)
+fill_page(SHEET_ID, temp, workers)
