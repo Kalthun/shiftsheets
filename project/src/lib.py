@@ -99,11 +99,14 @@ def date_to_date(date:date) -> Date:
     return Date(date.day, Month(date.month), date.year)
 
 def string_to_date(string:str) -> Date:
+
+    DEFAULT_YEAR = 2025
+
     temp = string.split("/")
     day = int(temp[1])
     month = Month(int(temp[0]))
     year = int(temp[2])
-    return Date(day,month,year)
+    return Date(day,month,DEFAULT_YEAR)
 
 class DateRange:
     def __init__(self,
