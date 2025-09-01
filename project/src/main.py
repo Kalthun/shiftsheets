@@ -336,8 +336,12 @@ temp = "June 23 - July 6"
 WA_data = get_page(WA_PAGE)
 workers = get_workers(WA_data)
 
-# for worker in workers:
-#     if worker.email == "coltonwatts2004@gmail.com":
-#         print(worker)
+for worker in workers:
+    if worker.email == "drewrome07@gmail.com":
+        print(worker)
 
-fill_page(SHEET_ID, temp, workers)
+# fill_page(SHEET_ID, temp, workers)
+
+# ToDo
+# ! - Delete anything before "today" (save them in a log file)
+# ! - Days of the week
